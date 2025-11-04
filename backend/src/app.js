@@ -15,6 +15,26 @@ app.use(express.json());
 
 app.get("/", (req, res) => res.send("Welcome to Sports Website API!"));
 
+// Health check endpoint
+app.get("/health", async (req, res) => {
+  try {
+    // Check database connection
+    await prisma.$queryRaw`SELECT 1`;
+    return res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      database: "connected",
+    });
+  } catch (err) {
+    return res.status(503).json({
+      status: "error",
+      timestamp: new Date().toISOString(),
+      database: "disconnected",
+      error: err.message,
+    });
+  }
+});
+
 // Auth: Signup
 app.post("/auth/signup", async (req, res) => {
   try {
