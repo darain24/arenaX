@@ -11,16 +11,6 @@ const app = express();
 // Optimize Prisma Client for serverless environments
 const prisma = new PrismaClient({
   log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL,
-    },
-  },
-});
-
-// Handle Prisma connection errors gracefully
-prisma.$connect().catch((err) => {
-  console.error("Prisma connection error:", err);
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
