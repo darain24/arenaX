@@ -2,13 +2,14 @@
   "version": 2,
   "functions": {
     "api/index.js": {
-      "includeFiles": "src/**"
+      "includeFiles": "src/**",
+      "maxDuration": 30
     }
   },
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/src/app.js"
+      "destination": "/api/index.js"
     }
   ]
 }
