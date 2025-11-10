@@ -41,7 +41,7 @@ app.get("/health", async (req, res) => {
 });
 
 // Auth: Signup
-app.post("/signup", async (req, res) => {
+app.post("/auth/signup", async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
@@ -72,7 +72,7 @@ app.post("/signup", async (req, res) => {
 });
 
 // Auth: Login
-app.post("/login", async (req, res) => {
+app.post("/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
