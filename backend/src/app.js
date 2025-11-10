@@ -66,8 +66,16 @@ app.post("/auth/signup", async (req, res) => {
 
     return res.status(201).json({ user });
   } catch (err) {
-    console.error("/auth/signup error", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("/auth/signup error:", err);
+    console.error("Error details:", {
+      message: err.message,
+      code: err.code,
+      meta: err.meta,
+    });
+    return res.status(500).json({ 
+      error: "Internal server error",
+      message: process.env.VERCEL_ENV === "development" ? err.message : undefined,
+    });
   }
 });
 
@@ -96,8 +104,16 @@ app.post("/auth/login", async (req, res) => {
       token,
     });
   } catch (err) {
-    console.error("/auth/login error", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("/auth/login error:", err);
+    console.error("Error details:", {
+      message: err.message,
+      code: err.code,
+      meta: err.meta,
+    });
+    return res.status(500).json({ 
+      error: "Internal server error",
+      message: process.env.VERCEL_ENV === "development" ? err.message : undefined,
+    });
   }
 });
 
