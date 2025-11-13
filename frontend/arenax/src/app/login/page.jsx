@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
+import { setAccessToken, setRefreshToken } from "@/lib/token";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,14 +30,18 @@ export default function LoginPage() {
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(data?.error || "Login failed");
+          // Show the detailed error message from the server if available
+          const errorMsg = data?.message || data?.error || "Login failed";
+          console.error("Login error:", errorMsg, data);
+          throw new Error(errorMsg);
         }
         return data;
       })
       .then((data) => {
         setLoading(false);
-        if (data?.token) {
-          localStorage.setItem("token", data.token);
+        if (data?.accessToken && data?.refreshToken) {
+          setAccessToken(data.accessToken);
+          setRefreshToken(data.refreshToken);
         }
         router.replace("/");
       })

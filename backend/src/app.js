@@ -14,9 +14,25 @@ const prisma = new PrismaClient({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
+const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || JWT_SECRET + "-refresh";
+const REFRESH_TOKEN_EXPIRY_DAYS = 30; // Refresh tokens expire in 30 days
+const ACCESS_TOKEN_EXPIRY = "7d"; // Access tokens expire in 7 days
 
-app.use(cors());
+// CORS configuration
+const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+app.use(cors({
+  origin: frontendUrl,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 app.use(express.json());
+
+// Helper function to generate refresh token (JWT-based)
+function generateRefreshToken(userId) {
+  return jwt.sign({ userId, type: "refresh" }, REFRESH_TOKEN_SECRET, { 
+    expiresIn: `${REFRESH_TOKEN_EXPIRY_DAYS}d` 
+  });
+}
 
 app.get("/", (req, res) => res.send("Welcome to Sports Website API!"));
 
@@ -98,10 +114,16 @@ app.post("/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "1h" });
+    // Generate access token (7 days)
+    const accessToken = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+    
+    // Generate refresh token
+    const refreshToken = generateRefreshToken(user.id);
+
     return res.json({
       user: { id: user.id, username: user.username, email: user.email },
-      token,
+      accessToken,
+      refreshToken,
     });
   } catch (err) {
     console.error("/auth/login error:", err);
@@ -109,15 +131,58 @@ app.post("/auth/login", async (req, res) => {
       message: err.message,
       code: err.code,
       meta: err.meta,
+      stack: err.stack,
     });
+    // Always include error message in development
+    const isDev = process.env.NODE_ENV === "development" || process.env.VERCEL_ENV === "development" || !process.env.NODE_ENV;
     return res.status(500).json({ 
       error: "Internal server error",
-      message: process.env.VERCEL_ENV === "development" ? err.message : undefined,
+      message: isDev ? err.message : undefined,
+      code: err.code,
+      ...(isDev && { stack: err.stack }),
     });
   }
 });
 
-// Stateless logout: client should discard token [[memory:9119796]]
+// Auth: Refresh Token
+app.post("/auth/refresh", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ error: "refreshToken is required" });
+    }
+
+    // Verify the refresh token
+    let payload;
+    try {
+      payload = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+      
+      // Verify it's a refresh token
+      if (payload.type !== "refresh") {
+        throw new Error("Invalid token type");
+      }
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+
+    // Generate new access token
+    const accessToken = jwt.sign({ userId: payload.userId }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+
+    return res.json({
+      accessToken,
+    });
+  } catch (err) {
+    console.error("/auth/refresh error:", err);
+    const isDev = process.env.NODE_ENV === "development" || process.env.VERCEL_ENV === "development" || !process.env.NODE_ENV;
+    return res.status(500).json({ 
+      error: "Internal server error",
+      message: isDev ? err.message : undefined,
+    });
+  }
+});
+
+// Logout: client should discard tokens
 app.post("/auth/logout", (_req, res) => {
   return res.json({ success: true });
 });
@@ -131,7 +196,11 @@ function requireAuth(req, res, next) {
     const payload = jwt.verify(token, JWT_SECRET);
     req.userId = payload.userId;
     next();
-  } catch {
+  } catch (err) {
+    // If token is expired, provide more specific error
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({ error: "Token expired", code: "TOKEN_EXPIRED" });
+    }
     return res.status(401).json({ error: "Invalid token" });
   }
 }
