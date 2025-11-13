@@ -18,10 +18,24 @@ const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || JWT_SECRET + "-
 const REFRESH_TOKEN_EXPIRY_DAYS = 30; // Refresh tokens expire in 30 days
 const ACCESS_TOKEN_EXPIRY = "7d"; // Access tokens expire in 7 days
 
-// CORS configuration
-const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+// CORS configuration - support multiple origins for dev and production
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:3000",
+  "https://arena-x-mdxr.vercel.app",
+].filter(Boolean); // Remove undefined values
+
 app.use(cors({
-  origin: frontendUrl,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
