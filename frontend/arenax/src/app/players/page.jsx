@@ -237,6 +237,7 @@ export default function PlayersPage() {
                         src={player.imageUrl}
                         alt={player.name || "Player"}
                         className="h-full w-full object-cover"
+                        style={{ objectPosition: 'center 25%' }}
                         onError={(e) => {
                           // Hide image and show placeholder on error
                           e.target.style.display = "none";

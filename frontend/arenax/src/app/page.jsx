@@ -180,7 +180,7 @@ export default function Home() {
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
         if (data.matches && Array.isArray(data.matches)) {
-          setMatches(data.matches.slice(0, 4)); // Show first 4 matches (2x2 grid)
+          setMatches(data.matches.slice(0, 8)); // Show first 8 matches
         }
       })
       .catch((err) => {
@@ -425,11 +425,11 @@ export default function Home() {
           <p className="text-zinc-400">Don't miss the action</p>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
           {loadingMatches ? (
-            <div className="col-span-2 text-center text-zinc-400">Loading matches...</div>
+            <div className="col-span-full text-center text-zinc-400">Loading matches...</div>
           ) : matches.length === 0 ? (
-            <div className="col-span-2 text-center text-zinc-400">No upcoming matches</div>
+            <div className="col-span-full text-center text-zinc-400">No upcoming matches</div>
           ) : (
             matches.map((match, idx) => {
               const countdown = calculateCountdown(match.utcDate);
@@ -449,24 +449,30 @@ export default function Home() {
                           src={match.homeTeam.crest}
                           alt={`${match.homeTeam.name} logo`}
                           className="h-10 w-10 rounded-full border border-white/20 bg-black/40 object-cover"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
                         />
                       )}
                       <span className="font-semibold text-white">
                         {match.homeTeam?.name || "Team 1"}
                       </span>
                     </div>
-                    <span className="font-bold text-white">VS</span>
+                    <span className="font-bold text-white text-sm">VS</span>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold text-white">
-                        {match.awayTeam?.name || "Team 2"}
-                      </span>
                       {match.awayTeam?.crest && (
                         <img
                           src={match.awayTeam.crest}
                           alt={`${match.awayTeam.name} logo`}
                           className="h-10 w-10 rounded-full border border-white/20 bg-black/40 object-cover"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
                         />
                       )}
+                      <span className="font-semibold text-white">
+                        {match.awayTeam?.name || "Team 2"}
+                      </span>
                     </div>
                   </div>
 
@@ -546,6 +552,7 @@ export default function Home() {
                         src={playerImage}
                         alt={player.name || "Top player"}
                         className="h-full w-full object-cover opacity-90"
+                        style={{ objectPosition: 'center 25%' }}
                         onError={(e) => {
                           // Hide image and show placeholder on error
                           e.target.style.display = "none";

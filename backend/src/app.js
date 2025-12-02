@@ -64,6 +64,29 @@ function setCachedPlayers(data) {
   playersCache.timestamp = Date.now();
 }
 
+// Simple in-memory cache for matches data (cache for 30 minutes)
+const matchesCache = {
+  data: null,
+  timestamp: null,
+  TTL: 30 * 60 * 1000, // 30 minutes in milliseconds
+};
+
+function getCachedMatches() {
+  if (matchesCache.data && matchesCache.timestamp) {
+    const now = Date.now();
+    if (now - matchesCache.timestamp < matchesCache.TTL) {
+      console.log("Returning cached matches data");
+      return matchesCache.data;
+    }
+  }
+  return null;
+}
+
+function setCachedMatches(data) {
+  matchesCache.data = data;
+  matchesCache.timestamp = Date.now();
+}
+
 // Fallback teams data when API is unavailable
 function getFallbackTeams() {
   return [
@@ -869,6 +892,28 @@ app.get("/me", requireAuth, async (req, res) => {
   return res.json({ user });
 });
 
+// Helper function to get team logo from teams cache
+function getTeamLogo(teamName, teamsData) {
+  if (!teamsData || !Array.isArray(teamsData)) return null;
+  
+  // Try exact match first
+  const exactMatch = teamsData.find(
+    (t) => t.name && t.name.toLowerCase() === teamName.toLowerCase()
+  );
+  if (exactMatch && exactMatch.crest) return exactMatch.crest;
+  
+  // Try partial match (e.g., "Arsenal" matches "Arsenal FC")
+  const partialMatch = teamsData.find(
+    (t) => t.name && (
+      t.name.toLowerCase().includes(teamName.toLowerCase()) ||
+      teamName.toLowerCase().includes(t.name.toLowerCase())
+    )
+  );
+  if (partialMatch && partialMatch.crest) return partialMatch.crest;
+  
+  return null;
+}
+
 // SportsDB-based football endpoints (matches, teams, players)
 app.get("/api/football/matches", async (req, res) => {
   try {
@@ -885,40 +930,91 @@ app.get("/api/football/matches", async (req, res) => {
       return res.json({ matches: [] });
     }
     
+    // Check cache first
+    const cachedMatches = getCachedMatches();
+    if (cachedMatches) {
+      return res.json({ matches: cachedMatches });
+    }
+    
+    // Get teams data for logos (from cache if available)
+    let teamsData = getCachedTeams();
+    if (!teamsData) {
+      // Try to fetch teams if not cached
+      try {
+        const API_SPORTS_KEY = process.env.API_SPORTS_KEY || process.env.RAPIDAPI_KEY;
+        if (API_SPORTS_KEY) {
+          const API_SPORTS_BASE_URL = "https://api-football-v1.p.rapidapi.com/v3";
+          const leagueIds = process.env.API_SPORTS_LEAGUE_IDS || "39,140";
+          const LEAGUE_IDS_FOR_TEAMS = leagueIds.split(",").map((id) => id.trim()).filter(Boolean);
+          const currentYear = new Date().getFullYear();
+          
+          const teamsResults = await Promise.all(
+            LEAGUE_IDS_FOR_TEAMS.map(async (leagueId) => {
+              try {
+                const url = `${API_SPORTS_BASE_URL}/teams?league=${leagueId}&season=${currentYear}`;
+                const resp = await fetch(url, {
+                  method: 'GET',
+                  headers: {
+                    'X-RapidAPI-Key': API_SPORTS_KEY,
+                    'X-RapidAPI-Host': 'api-football-v1.p.rapidapi.com',
+                  },
+                });
+                if (resp.ok) {
+                  const data = await resp.json().catch(() => null);
+                  if (data && data.response) {
+                    return data.response.map((item) => ({
+                      name: item.team?.name,
+                      crest: item.team?.logo || null,
+                    })).filter(t => t.name);
+                  }
+                }
+              } catch (err) {
+                console.error(`Error fetching teams for logos:`, err.message);
+              }
+              return [];
+            })
+          );
+          teamsData = teamsResults.flat();
+        }
+      } catch (err) {
+        console.error("Error fetching teams for logos:", err);
+      }
+    }
+    
     if (!SPORTSDB_API_KEY) {
       // Return mock data if API key is not configured
-      return res.json({
-        matches: [
-          {
-            id: 1,
-            homeTeam: {
-              name: "Arsenal",
-              crest: "https://upload.wikimedia.org/wikipedia/en/5/53/Arsenal_FC.svg",
-            },
-            awayTeam: {
-              name: "Chelsea",
-              crest: "https://upload.wikimedia.org/wikipedia/en/c/cc/Chelsea_FC.svg",
-            },
-            utcDate: new Date(Date.now() + 86400000).toISOString(),
-            competition: { name: "Premier League" },
-            venue: "Emirates Stadium",
+      const mockMatches = [
+        {
+          id: 1,
+          homeTeam: {
+            name: "Arsenal",
+            crest: getTeamLogo("Arsenal", teamsData) || "https://upload.wikimedia.org/wikipedia/en/5/53/Arsenal_FC.svg",
           },
-          {
-            id: 2,
-            homeTeam: {
-              name: "Manchester United",
-              crest: "https://upload.wikimedia.org/wikipedia/en/7/7a/Manchester_United_FC_crest.svg",
-            },
-            awayTeam: {
-              name: "Liverpool",
-              crest: "https://upload.wikimedia.org/wikipedia/en/0/0c/Liverpool_FC.svg",
-            },
-            utcDate: new Date(Date.now() + 172800000).toISOString(),
-            competition: { name: "Premier League" },
-            venue: "Old Trafford",
+          awayTeam: {
+            name: "Chelsea",
+            crest: getTeamLogo("Chelsea", teamsData) || "https://upload.wikimedia.org/wikipedia/en/c/cc/Chelsea_FC.svg",
           },
-        ],
-      });
+          utcDate: new Date(Date.now() + 86400000).toISOString(),
+          competition: { name: "Premier League" },
+          venue: "Emirates Stadium",
+        },
+        {
+          id: 2,
+          homeTeam: {
+            name: "Manchester United",
+            crest: getTeamLogo("Manchester United", teamsData) || "https://upload.wikimedia.org/wikipedia/en/7/7a/Manchester_United_FC_crest.svg",
+          },
+          awayTeam: {
+            name: "Liverpool",
+            crest: getTeamLogo("Liverpool", teamsData) || "https://upload.wikimedia.org/wikipedia/en/0/0c/Liverpool_FC.svg",
+          },
+          utcDate: new Date(Date.now() + 172800000).toISOString(),
+          competition: { name: "Premier League" },
+          venue: "Old Trafford",
+        },
+      ];
+      setCachedMatches(mockMatches);
+      return res.json({ matches: mockMatches });
     }
     
     try {
@@ -945,10 +1041,21 @@ app.get("/api/football/matches", async (req, res) => {
               const utcDate = dateStr
                 ? new Date(`${dateStr}T${timeStr}Z`).toISOString()
                 : new Date().toISOString();
+              
+              // Get team logos from teams data
+              const homeTeamLogo = getTeamLogo(e.strHomeTeam, teamsData);
+              const awayTeamLogo = getTeamLogo(e.strAwayTeam, teamsData);
+              
               return {
                 id: e.idEvent,
-                homeTeam: { name: e.strHomeTeam },
-                awayTeam: { name: e.strAwayTeam },
+                homeTeam: { 
+                  name: e.strHomeTeam,
+                  crest: homeTeamLogo,
+                },
+                awayTeam: { 
+                  name: e.strAwayTeam,
+                  crest: awayTeamLogo,
+                },
                 utcDate,
                 competition: { name: e.strLeague },
                 venue: e.strVenue || e.strStadium || null,
@@ -971,30 +1078,44 @@ app.get("/api/football/matches", async (req, res) => {
           (a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime()
         );
 
+      // Cache the results
+      setCachedMatches(allMatches);
       return res.json({ matches: allMatches });
     } catch (apiError) {
       console.error("SportsDB matches error:", apiError);
       // Return mock data on error
-      return res.json({
-        matches: [
-          {
-            id: 1,
-            homeTeam: { name: "Arsenal", crest: null },
-            awayTeam: { name: "Chelsea", crest: null },
-            utcDate: new Date(Date.now() + 86400000).toISOString(),
-            competition: { name: "Premier League" },
-            venue: "Emirates Stadium",
+      const fallbackMatches = [
+        {
+          id: 1,
+          homeTeam: { 
+            name: "Arsenal", 
+            crest: getTeamLogo("Arsenal", teamsData) || null,
           },
-          {
-            id: 2,
-            homeTeam: { name: "Manchester United", crest: null },
-            awayTeam: { name: "Liverpool", crest: null },
-            utcDate: new Date(Date.now() + 172800000).toISOString(),
-            competition: { name: "Premier League" },
-            venue: "Old Trafford",
+          awayTeam: { 
+            name: "Chelsea", 
+            crest: getTeamLogo("Chelsea", teamsData) || null,
           },
-        ],
-      });
+          utcDate: new Date(Date.now() + 86400000).toISOString(),
+          competition: { name: "Premier League" },
+          venue: "Emirates Stadium",
+        },
+        {
+          id: 2,
+          homeTeam: { 
+            name: "Manchester United", 
+            crest: getTeamLogo("Manchester United", teamsData) || null,
+          },
+          awayTeam: { 
+            name: "Liverpool", 
+            crest: getTeamLogo("Liverpool", teamsData) || null,
+          },
+          utcDate: new Date(Date.now() + 172800000).toISOString(),
+          competition: { name: "Premier League" },
+          venue: "Old Trafford",
+        },
+      ];
+      setCachedMatches(fallbackMatches);
+      return res.json({ matches: fallbackMatches });
     }
   } catch (err) {
     console.error("/api/football/matches error:", err);
