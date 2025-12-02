@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { API_URL } from "@/lib/api";
 import { setAccessToken, setRefreshToken } from "@/lib/token";
 
-export default function GoogleCallbackPage() {
+function GoogleCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
@@ -71,6 +71,23 @@ export default function GoogleCallbackPage() {
         <p className="text-zinc-400">Completing Google authentication...</p>
       </div>
     </main>
+  );
+}
+
+export default function GoogleCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#04050b] text-white">
+          <div className="text-center">
+            <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-[#5da2ff] border-t-transparent mx-auto" />
+            <p className="text-zinc-400">Loading...</p>
+          </div>
+        </main>
+      }
+    >
+      <GoogleCallbackContent />
+    </Suspense>
   );
 }
 
