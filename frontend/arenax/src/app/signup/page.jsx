@@ -159,49 +159,49 @@ export default function SignupPage() {
               Or continue with email
             </p>
 
-            {error ? (
+        {error ? (
               <p className="mt-3 text-sm text-red-400" role="alert">
                 {error}
               </p>
-            ) : null}
+        ) : null}
 
             <form onSubmit={onSubmit} className="mt-4 space-y-4">
-              <div className="space-y-2">
+        <div className="space-y-2">
                 <label htmlFor="fullName" className="text-sm text-zinc-300">
                   Full name
                 </label>
-                <Input
+          <Input
                   id="fullName"
-                  type="text"
+            type="text"
                   placeholder="Your full name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="border-white/10 bg-white/5 text-white placeholder:text-zinc-500 focus-visible:ring-[#7c5dff]"
-                />
-              </div>
-              <div className="space-y-2">
+          />
+        </div>
+        <div className="space-y-2">
                 <label htmlFor="email" className="text-sm text-zinc-300">
                   Email
                 </label>
-                <Input
-                  id="email"
-                  type="email"
+          <Input
+            id="email"
+            type="email"
                   placeholder="name@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
                   className="border-white/10 bg-white/5 text-white placeholder:text-zinc-500 focus-visible:ring-[#7c5dff]"
-                />
-              </div>
-              <div className="space-y-2">
+          />
+        </div>
+        <div className="space-y-2">
                 <label htmlFor="password" className="text-sm text-zinc-300">
                   Password
                 </label>
-                <Input
-                  id="password"
-                  type="password"
+          <Input
+            id="password"
+            type="password"
                   placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
                   className="border-white/10 bg-white/5 text-white placeholder:text-zinc-500 focus-visible:ring-[#7c5dff]"
                 />
               </div>
@@ -216,8 +216,8 @@ export default function SignupPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="border-white/10 bg-white/5 text-white placeholder:text-zinc-500 focus-visible:ring-[#7c5dff]"
-                />
-              </div>
+          />
+        </div>
               <Button
                 type="submit"
                 className="w-full rounded-xl bg-gradient-to-r from-[#71d1ff] via-[#7760ff] to-[#d76bff] text-base font-medium text-white shadow-lg shadow-[#4f44ff]/40 hover:opacity-90"
@@ -229,7 +229,7 @@ export default function SignupPage() {
                     <ArrowRight className="h-5 w-5" />
                   </>
                 )}
-              </Button>
+        </Button>
             </form>
 
             <p className="mt-6 text-center text-sm text-zinc-400">

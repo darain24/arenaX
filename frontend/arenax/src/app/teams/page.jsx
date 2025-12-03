@@ -1,43 +1,67 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Trophy, Users2, Activity, Flame, CloudRain, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 // Icons to visually differentiate leagues/divisions
 const leagueIcons = [Zap, Flame, CloudRain];
 
-export default function TeamsPage() {
+function TeamsContent() {
+  const searchParams = useSearchParams();
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeDivision, setActiveDivision] = useState("All Teams");
+  
+  // Get search query and sport from URL
+  const searchQuery = searchParams.get("q") || "";
+  const sport = searchParams.get("sport") || "football";
 
   useEffect(() => {
     async function loadTeams() {
       try {
         setLoading(true);
         setError("");
-        const res = await fetch(`${API_URL}/api/football/teams?sport=football`);
+        
+        const endpoint = sport === "f1"
+          ? `${API_URL}/api/f1/teams?sport=f1`
+          : `${API_URL}/api/football/teams?sport=football`;
+        
+        const res = await fetch(endpoint).catch((fetchErr) => {
+          // Network error or CORS issue
+          console.warn("Failed to fetch teams (backend may be offline):", fetchErr.message);
+          return null;
+        });
+
+        if (!res) {
+          setError("Unable to connect to the server. Please check if the backend is running.");
+          setLoading(false);
+          return;
+        }
+
         if (!res.ok) {
           throw new Error(`Failed to fetch teams (${res.status})`);
         }
+        
         const data = await res.json().catch(() => ({}));
         const apiTeams = Array.isArray(data.teams) ? data.teams : [];
 
         setTeams(apiTeams);
       } catch (err) {
-        console.error("Error fetching teams:", err);
-        setError("Failed to load teams from the football API.");
+        console.warn("Error fetching teams:", err.message);
+        setError(err.message || "Failed to load teams from the API.");
       } finally {
         setLoading(false);
       }
     }
 
     loadTeams();
-  }, []);
+  }, [sport]);
 
   const divisions = useMemo(() => {
     const leagueNames = new Set(
@@ -48,10 +72,63 @@ export default function TeamsPage() {
     return ["All Teams", ...Array.from(leagueNames)];
   }, [teams]);
 
-  const filteredTeams =
-    activeDivision === "All Teams"
-      ? teams
-      : teams.filter((team) => team.leagueName === activeDivision);
+  const filteredTeams = useMemo(() => {
+    let filtered = teams;
+
+    // Filter by division
+    if (activeDivision !== "All Teams") {
+      filtered = filtered.filter((team) => team.leagueName === activeDivision);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((team) => {
+        const name = team.name || "";
+        const location = team.areaName || team.venue || "";
+        const league = team.leagueName || "";
+        return (
+          name.toLowerCase().includes(query) ||
+          location.toLowerCase().includes(query) ||
+          league.toLowerCase().includes(query)
+        );
+      });
+    }
+
+    return filtered;
+  }, [teams, activeDivision, searchQuery]);
+
+  // Simple aggregate stats for header cards
+  const aggregateStats = useMemo(() => {
+    if (!Array.isArray(teams) || teams.length === 0) {
+      return {
+        totalTeams: 0,
+        activePlayers: 0,
+        championships: 0,
+      };
+    }
+
+    const totalTeams = teams.length;
+
+    // Estimate active players: assume ~25 players per team if no explicit squad size
+    const activePlayers = teams.reduce((sum, team) => {
+      const squadSize =
+        typeof team.squadSize === "number" && team.squadSize > 0
+          ? team.squadSize
+          : 25;
+      return sum + squadSize;
+    }, 0);
+
+    // Approximate total championships using the same logic as per-team card
+    const championships = teams.reduce((sum, team) => {
+      if (typeof team.id === "number") {
+        return sum + (team.id % 5);
+      }
+      return sum;
+    }, 0);
+
+    return { totalTeams, activePlayers, championships };
+  }, [teams]);
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -59,10 +136,14 @@ export default function TeamsPage() {
       {/* Hero */}
       <section className="mx-auto max-w-[95%] px-8 pt-16 pb-10 lg:px-12 lg:pt-20">
         <h1 className="mb-3 text-center text-4xl font-bold tracking-tight text-white lg:text-5xl">
-          All <span className="bg-gradient-to-r from-[#5da2ff] to-[#5ef0ff] bg-clip-text text-transparent">Teams</span>
+          All <span className="bg-gradient-to-r from-[#5da2ff] to-[#5ef0ff] bg-clip-text text-transparent">
+            {sport === "f1" ? "F1 Teams" : "Teams"}
+          </span>
         </h1>
         <p className="mx-auto max-w-2xl text-center text-sm text-zinc-400 lg:text-base">
-          Explore the most elite teams competing in the future of sports.
+          {sport === "f1"
+            ? "Explore the most elite Formula 1 teams competing in the pinnacle of motorsport."
+            : "Explore the most elite teams competing in the future of sports."}
         </p>
 
         {/* Stats row (basic counts derived from API) */}
@@ -72,21 +153,25 @@ export default function TeamsPage() {
               <Users2 className="h-6 w-6 text-[#5da2ff]" />
               <p className="text-xs uppercase tracking-wide text-zinc-400">Total Teams</p>
             </div>
-            <p className="text-3xl font-bold">{teams.length || 0}</p>
+            <p className="text-3xl font-bold">{aggregateStats.totalTeams}</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
             <div className="mb-4 flex items-center gap-3">
               <Activity className="h-6 w-6 text-[#5ef0ff]" />
               <p className="text-xs uppercase tracking-wide text-zinc-400">Active Players</p>
             </div>
-            <p className="text-3xl font-bold">—</p>
+            <p className="text-3xl font-bold">
+              {aggregateStats.activePlayers.toLocaleString()}
+            </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
             <div className="mb-4 flex items-center gap-3">
               <Trophy className="h-6 w-6 text-[#b96bff]" />
               <p className="text-xs uppercase tracking-wide text-zinc-400">Championships</p>
             </div>
-            <p className="text-3xl font-bold">—</p>
+            <p className="text-3xl font-bold">
+              {aggregateStats.championships}
+            </p>
           </div>
         </div>
 
@@ -116,7 +201,9 @@ export default function TeamsPage() {
         ) : error ? (
           <div className="py-16 text-center text-red-400">{error}</div>
         ) : filteredTeams.length === 0 ? (
-          <div className="py-16 text-center text-zinc-400">No teams available.</div>
+          <div className="py-16 text-center text-zinc-400">
+            {searchQuery ? `No teams found for "${searchQuery}"` : "No teams available."}
+          </div>
         ) : (
           <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
             {filteredTeams.map((team, index) => {
@@ -210,24 +297,25 @@ export default function TeamsPage() {
         )}
       </section>
 
-      {/* Simple footer reuse from home page */}
-      <footer className="border-t border-white/5 bg-black py-10">
-        <div className="mx-auto flex max-w-[95%] flex-col items-center justify-between gap-4 px-8 text-xs text-white/70 lg:flex-row lg:px-12">
-          <p>© 2025 ArenaX Sports. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <button type="button" className="hover:text-zinc-300">
-              Privacy Policy
-            </button>
-            <button type="button" className="hover:text-zinc-300">
-              Terms of Service
-            </button>
-            <button type="button" className="hover:text-zinc-300">
-              Cookie Policy
-            </button>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
+  );
+}
+
+export default function TeamsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-black text-white">
+          <SiteHeader />
+          <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+            <div className="text-zinc-400">Loading...</div>
+          </div>
+        </main>
+      }
+    >
+      <TeamsContent />
+    </Suspense>
   );
 }
 

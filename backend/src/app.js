@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 
 dotenv.config();
 const app = express();
@@ -17,6 +18,25 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || JWT_SECRET + "-refresh";
 const REFRESH_TOKEN_EXPIRY_DAYS = 30; // Refresh tokens expire in 30 days
 const ACCESS_TOKEN_EXPIRY = "7d"; // Access tokens expire in 7 days
+
+// Simple mail transport for contact form (configure via env for hobby use)
+let contactTransporter = null;
+if (
+  process.env.SMTP_HOST &&
+  process.env.SMTP_PORT &&
+  process.env.SMTP_USER &&
+  process.env.SMTP_PASS
+) {
+  contactTransporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: Number(process.env.SMTP_PORT) === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
 
 // Simple in-memory cache for teams data (cache for 1 hour)
 const teamsCache = {
@@ -124,9 +144,9 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
 
       const isProduction = process.env.NODE_ENV === "production";
 
@@ -137,15 +157,15 @@ app.use(
       ) {
         return callback(null, true);
       }
-
-      if (allowedOrigins.includes(origin)) {
+    
+    if (allowedOrigins.includes(origin)) {
         return callback(null, true);
-      }
+    }
 
       return callback(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 app.use(express.json());
@@ -783,6 +803,50 @@ app.get("/auth/me", async (req, res) => {
   }
 });
 
+// Contact form endpoint - sends hobby project messages to the owner
+app.post("/api/contact", async (req, res) => {
+  try {
+    const { firstName, lastName, email, subject, message } = req.body || {};
+
+    if (!email || !message) {
+      return res.status(400).json({ ok: false, error: "Email and message are required." });
+    }
+
+    const ownerEmail = process.env.CONTACT_EMAIL || "darainqamar10@gmail.com";
+    const fullName = `${firstName || ""} ${lastName || ""}`.trim() || "Anonymous";
+    const mailSubject =
+      subject && subject.trim().length > 0 ? subject : "New ArenaX contact message";
+
+    // If mail transport is not configured, just log and return success so the UI feels responsive
+    if (!contactTransporter) {
+      console.log("Contact message (email transport not configured):", {
+        from: email,
+        name: fullName,
+        subject: mailSubject,
+        message,
+      });
+      return res.json({
+        ok: true,
+        delivered: false,
+        message: "Message received (logged on server).",
+      });
+    }
+
+    await contactTransporter.sendMail({
+      from: `"ArenaX Contact" <${process.env.SMTP_FROM || ownerEmail}>`,
+      to: ownerEmail,
+      replyTo: email,
+      subject: mailSubject,
+      text: `From: ${fullName} <${email}>\n\n${message}`,
+    });
+
+    return res.json({ ok: true, delivered: true });
+  } catch (err) {
+    console.error("Error handling /api/contact:", err);
+    return res.status(500).json({ ok: false, error: "Failed to send message." });
+  }
+});
+
 // Update user profile
 app.put("/auth/profile", requireAuth, async (req, res) => {
   try {
@@ -856,6 +920,33 @@ app.put("/auth/profile", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("/auth/profile error:", err);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Delete current user account
+app.delete("/auth/profile", requireAuth, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    // Ensure user exists
+    const existing = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Delete user (and rely on database constraints / cascading for related data)
+    await prisma.user.delete({
+      where: { id: userId },
+    });
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("/auth/profile DELETE error:", err);
+    return res.status(500).json({ error: "Failed to delete account" });
   }
 });
 

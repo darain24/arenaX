@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -68,7 +69,7 @@ function ResetPasswordContent() {
     <main className="min-h-screen bg-[#04050b] text-white">
       <SiteHeader />
       <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-[95%] items-center justify-center px-4 py-10">
-        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-[0_40px_160px_rgba(3,4,12,0.9)] backdrop-blur-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-[0_40px_160px_rgba(3,4,12,0.9)] backdrop-blur-2xl">
         <h1 className="text-2xl font-semibold">Create a new password</h1>
         <p className="mt-2 text-sm text-zinc-300">
           Choose a strong password that you don't use elsewhere.
@@ -122,6 +123,7 @@ function ResetPasswordContent() {
         </form>
         </div>
       </div>
+      <SiteFooter />
     </main>
   );
 }

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Calendar, Clock, MapPin, Zap, Flame } from "lucide-react";
+import { useEffect, useMemo, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Calendar, Clock, MapPin, Zap, Flame, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 // Helper to calculate countdown until match
 function calculateCountdown(dateString) {
@@ -43,37 +45,58 @@ function formatTime(dateString) {
   });
 }
 
-export default function MatchesPage() {
+function MatchesContent() {
+  const searchParams = useSearchParams();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  
+  // Get search query and sport from URL
+  const searchQuery = searchParams.get("q") || "";
+  const sport = searchParams.get("sport") || "football";
 
   useEffect(() => {
     async function loadMatches() {
       try {
         setLoading(true);
         setError("");
+        
+        const endpoint = sport === "f1"
+          ? `${API_URL}/api/f1/races?sport=f1`
+          : `${API_URL}/api/football/matches?sport=football`;
 
-        const res = await fetch(
-          `${API_URL}/api/football/matches?sport=football`
-        );
-        if (!res.ok) {
-          throw new Error(`Failed to fetch matches (${res.status})`);
+        const res = await fetch(endpoint).catch((fetchErr) => {
+          // Network error or CORS issue
+          console.warn("Failed to fetch matches/races (backend may be offline):", fetchErr.message);
+          return null;
+        });
+
+        if (!res) {
+          setError("Unable to connect to the server. Please check if the backend is running.");
+          setLoading(false);
+          return;
         }
+
+        if (!res.ok) {
+          throw new Error(`Failed to fetch ${sport === "f1" ? "races" : "matches"} (${res.status})`);
+        }
+        
         const data = await res.json().catch(() => ({}));
-        const apiMatches = Array.isArray(data.matches) ? data.matches : [];
+        const apiMatches = sport === "f1"
+          ? (Array.isArray(data.races) ? data.races : [])
+          : (Array.isArray(data.matches) ? data.matches : []);
 
         setMatches(apiMatches);
       } catch (err) {
-        console.error("Error fetching matches:", err);
-        setError("Failed to load matches from the football API.");
+        console.warn("Error fetching matches/races:", err.message);
+        setError(err.message || "Failed to load data from the API.");
       } finally {
         setLoading(false);
       }
     }
 
     loadMatches();
-  }, []);
+  }, [sport]);
 
   const competitions = useMemo(() => {
     const names = new Set(
@@ -84,6 +107,28 @@ export default function MatchesPage() {
     return Array.from(names);
   }, [matches]);
 
+  // Filter matches by search query
+  const filteredMatches = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return matches;
+    }
+    
+    const query = searchQuery.toLowerCase();
+    return matches.filter((match) => {
+      const homeTeam = match.homeTeam?.name || "";
+      const awayTeam = match.awayTeam?.name || "";
+      const competition = match.competition?.name || "";
+      const venue = match.venue || "";
+      
+      return (
+        homeTeam.toLowerCase().includes(query) ||
+        awayTeam.toLowerCase().includes(query) ||
+        competition.toLowerCase().includes(query) ||
+        venue.toLowerCase().includes(query)
+      );
+    });
+  }, [matches, searchQuery]);
+
   return (
     <main className="min-h-screen bg-black text-white">
       <SiteHeader />
@@ -93,18 +138,19 @@ export default function MatchesPage() {
         <h1 className="mb-3 text-center text-4xl font-bold tracking-tight text-white lg:text-5xl">
           Upcoming{" "}
           <span className="bg-gradient-to-r from-[#5da2ff] to-[#5ef0ff] bg-clip-text text-transparent">
-            Matches
+            {sport === "f1" ? "Races" : "Matches"}
           </span>
         </h1>
         <p className="mx-auto max-w-2xl text-center text-sm text-zinc-400 lg:text-base">
-          Don&apos;t miss the action from the biggest football competitions
-          around the world.
+          {sport === "f1"
+            ? "Don't miss the action from Formula 1 races around the world."
+            : "Don't miss the action from the biggest football competitions around the world."}
         </p>
 
         <div className="mt-10 grid gap-6 md:grid-cols-3">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
             <p className="text-xs uppercase tracking-wide text-zinc-400">
-              Total Matches
+              {sport === "f1" ? "Total Races" : "Total Matches"}
             </p>
             <p className="mt-3 text-3xl font-bold">{matches.length || 0}</p>
           </div>
@@ -135,14 +181,79 @@ export default function MatchesPage() {
           </div>
         ) : error ? (
           <div className="py-16 text-center text-red-400">{error}</div>
-        ) : matches.length === 0 ? (
+        ) : filteredMatches.length === 0 ? (
           <div className="py-16 text-center text-zinc-400">
-            No upcoming matches.
+            {searchQuery 
+              ? `No ${sport === "f1" ? "races" : "matches"} found for "${searchQuery}"` 
+              : `No upcoming ${sport === "f1" ? "races" : "matches"}.`}
           </div>
         ) : (
           <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
-            {matches.map((match, idx) => {
+            {filteredMatches.map((match, idx) => {
               const countdown = calculateCountdown(match.utcDate);
+              
+              // F1 Race Display
+              if (sport === "f1") {
+                return (
+                  <article
+                    key={match.id || `race-${idx}`}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm"
+                  >
+                    <div className="mb-6">
+                      <h3 className="text-xl font-bold text-white mb-2">{match.name}</h3>
+                      <div className="flex items-center gap-2 text-sm text-zinc-400">
+                        <Trophy className="h-4 w-4 text-red-500" />
+                        <span>Round {match.round}</span>
+                      </div>
+                    </div>
+
+                    <div className="mb-6 space-y-2 text-sm text-zinc-400">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>{formatDate(match.utcDate)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        <span>{formatTime(match.utcDate)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        <span>{match.circuit || match.location || "TBD"}</span>
+                      </div>
+                      <p className="text-xs text-zinc-500">{match.location}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500">Time until race:</p>
+                      <div className="flex gap-3">
+                        <div className="rounded-lg border border-white/10 bg-black/40 px-4 py-2 text-center">
+                          <p className="text-lg font-bold text-white">{countdown.days}</p>
+                          <p className="text-xs text-zinc-400">Days</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/40 px-4 py-2 text-center">
+                          <p className="text-lg font-bold text-white">{countdown.hours}</p>
+                          <p className="text-xs text-zinc-400">Hours</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/40 px-4 py-2 text-center">
+                          <p className="text-lg font-bold text-white">{countdown.minutes}</p>
+                          <p className="text-xs text-zinc-400">Minutes</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 flex items-center justify-between">
+                      <Button className="rounded-full bg-[#5da2ff] px-6 py-2 text-sm font-medium text-black hover:bg-[#78b4ff]">
+                        View Race Details
+                      </Button>
+                      <p className="text-xs text-zinc-500">
+                        Round: <span className="font-mono text-zinc-300">{match.round || "TBA"}</span>
+                      </p>
+                    </div>
+                  </article>
+                );
+              }
+              
+              // Football Match Display
               const teamColors = [
                 "text-yellow-400",
                 "text-orange-500",
@@ -236,7 +347,25 @@ export default function MatchesPage() {
           </div>
         )}
       </section>
+      <SiteFooter />
     </main>
+  );
+}
+
+export default function MatchesPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-black text-white">
+          <SiteHeader />
+          <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+            <div className="text-zinc-400">Loading...</div>
+          </div>
+        </main>
+      }
+    >
+      <MatchesContent />
+    </Suspense>
   );
 }
 

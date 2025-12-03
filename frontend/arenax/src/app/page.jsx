@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Play, Users, Calendar, Clock, MapPin, ShoppingCart, Star, Eye, Trophy, TrendingUp, BarChart3, Users2, Glasses, Zap, Flame, ArrowRight, Mail } from "lucide-react";
-import { FaFacebook, FaTwitter, FaInstagram, FaYoutube, FaFootballBall, FaBasketballBall, FaCar } from "react-icons/fa";
-import { GiCricketBat } from "react-icons/gi";
+import { FaFacebook, FaTwitter, FaInstagram, FaYoutube } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 const navLinks = ["Home", "Teams", "Matches", "Players", "News", "Contact"];
 
@@ -19,30 +19,34 @@ const heroStats = [
   { value: "1000+", label: "Live Matches", color: "text-[#65ff6d]" },
 ];
 
-// Feature Cards Data
+// Feature Cards Data – real ArenaX features
 const features = [
   {
     icon: TrendingUp,
-    title: "Live Match Tracking",
-    description: "Real-time updates and comprehensive match analytics at your fingertips.",
+    title: "Live Football Insights",
+    description:
+      "See upcoming fixtures, key stats, and form for the biggest football leagues in one dashboard.",
     iconColor: "text-[#5da2ff]",
   },
   {
     icon: BarChart3,
-    title: "Player Performance Analytics",
-    description: "Deep dive into player statistics with AI-powered insights and predictions.",
+    title: "Teams & Players Explorer",
+    description:
+      "Browse real squads, club details, and elite players with photos and performance metrics.",
     iconColor: "text-[#b96bff]",
   },
   {
     icon: Users2,
-    title: "Fan Community Hub",
-    description: "Connect with millions of fans worldwide in our interactive community.",
+    title: "Secure Accounts & Profiles",
+    description:
+      "Sign up with email or OAuth, manage your profile, and update credentials safely from one place.",
     iconColor: "text-[#65ff6d]",
   },
   {
     icon: Glasses,
-    title: "VR/AR Match Highlights",
-    description: "Experience matches like never before with immersive VR and AR technology.",
+    title: "Smart News & Highlights",
+    description:
+      "Stay on top of football stories with curated news, headlines, and visual match highlights.",
     iconColor: "text-[#5ef0ff]",
   },
 ];
@@ -148,8 +152,58 @@ export default function Home() {
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [loadingNews, setLoadingNews] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [selectedSport, setSelectedSport] = useState(null); // null = all sports, "football" = football only
   const [showPasswordAlert, setShowPasswordAlert] = useState(false);
+  
+  // Get selected sport from sessionStorage or URL params
+  const [selectedSport, setSelectedSport] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSport = urlParams.get("sport");
+    if (urlSport) return urlSport;
+    const storedSport = sessionStorage.getItem("selectedSport");
+    return storedSport || null;
+  });
+  
+  // Sync selectedSport with sessionStorage and URL
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlSport = urlParams.get("sport");
+      if (urlSport) {
+        setSelectedSport(urlSport);
+        sessionStorage.setItem("selectedSport", urlSport);
+      } else {
+        const storedSport = sessionStorage.getItem("selectedSport");
+        if (storedSport) {
+          setSelectedSport(storedSport);
+        } else {
+          // Default to null if no sport is selected
+          setSelectedSport(null);
+        }
+      }
+    }
+  }, []);
+
+  // Listen for URL changes to update selectedSport
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const handleLocationChange = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlSport = urlParams.get("sport");
+        setSelectedSport(urlSport || null);
+      };
+      
+      // Listen to popstate for browser back/forward
+      window.addEventListener("popstate", handleLocationChange);
+      
+      // Check URL on mount and when pathname changes
+      handleLocationChange();
+      
+      return () => {
+        window.removeEventListener("popstate", handleLocationChange);
+      };
+    }
+  }, []);
 
   // Check for password reset alert
   useEffect(() => {
@@ -173,34 +227,79 @@ export default function Home() {
       })
       .catch(() => {});
 
-    // Fetch matches
+    // Fetch matches/races
     setLoadingMatches(true);
     const sportParam = selectedSport ? `?sport=${selectedSport}` : "";
-    fetch(`${API_URL}/api/football/matches${sportParam}`)
-      .then((res) => res.json().catch(() => ({})))
+    const matchesEndpoint = selectedSport === "f1" 
+      ? `${API_URL}/api/f1/races${sportParam}`
+      : `${API_URL}/api/football/matches${sportParam}`;
+    fetch(matchesEndpoint)
+      .catch((fetchErr) => {
+        // Network error - backend may be offline
+        console.warn("Failed to fetch matches (backend may be offline):", fetchErr.message);
+        return null;
+      })
+      .then((res) => {
+        if (!res) return {};
+        return res.json().catch(() => ({}));
+      })
       .then((data) => {
-        if (data.matches && Array.isArray(data.matches)) {
-          setMatches(data.matches.slice(0, 8)); // Show first 8 matches
+        if (selectedSport === "f1") {
+          if (data.races && Array.isArray(data.races)) {
+            setMatches(data.races.slice(0, 8)); // Show first 8 races
+          }
+        } else {
+          if (data.matches && Array.isArray(data.matches)) {
+            setMatches(data.matches.slice(0, 8)); // Show first 8 matches
+          }
         }
       })
       .catch((err) => {
-        console.error("Error fetching matches:", err);
+        console.warn("Error fetching matches:", err.message);
       })
       .finally(() => {
         setLoadingMatches(false);
       });
 
-    // Fetch top players
+    // Fetch top players/drivers
     setLoadingPlayers(true);
-    fetch(`${API_URL}/api/football/players${sportParam}`)
-      .then((res) => res.json().catch(() => ({})))
+    const playersEndpoint = selectedSport === "f1"
+      ? `${API_URL}/api/f1/drivers${sportParam}`
+      : `${API_URL}/api/football/players${sportParam}`;
+    fetch(playersEndpoint)
+      .catch((fetchErr) => {
+        // Network error - backend may be offline
+        console.warn("Failed to fetch players (backend may be offline):", fetchErr.message);
+        return null;
+      })
+      .then((res) => {
+        if (!res) return {};
+        return res.json().catch(() => ({}));
+      })
       .then((data) => {
-        if (data.scorers && Array.isArray(data.scorers)) {
-          setPlayers(data.scorers.slice(0, 4)); // Show top 4 players
+        if (selectedSport === "f1") {
+          if (data.drivers && Array.isArray(data.drivers)) {
+            // Map drivers to players format for compatibility
+            setPlayers(data.drivers.slice(0, 4).map(driver => ({
+              player: {
+                id: driver.id,
+                name: driver.name,
+                position: driver.code,
+                imageUrl: driver.imageUrl,
+              },
+              team: { name: driver.nationality },
+              goals: driver.points,
+              assists: driver.wins,
+            })));
+          }
+        } else {
+          if (data.scorers && Array.isArray(data.scorers)) {
+            setPlayers(data.scorers.slice(0, 4)); // Show top 4 players
+          }
         }
       })
       .catch((err) => {
-        console.error("Error fetching players:", err);
+        console.warn("Error fetching players:", err.message);
       })
       .finally(() => {
         setLoadingPlayers(false);
@@ -208,15 +307,26 @@ export default function Home() {
 
     // Fetch news
     setLoadingNews(true);
-    fetch(`${API_URL}/api/football/news${sportParam}`)
-      .then((res) => res.json().catch(() => ({})))
+    const newsEndpoint = selectedSport === "f1"
+      ? `${API_URL}/api/f1/news${sportParam}`
+      : `${API_URL}/api/football/news${sportParam}`;
+    fetch(newsEndpoint)
+      .catch((fetchErr) => {
+        // Network error - backend may be offline
+        console.warn("Failed to fetch news (backend may be offline):", fetchErr.message);
+        return null;
+      })
+      .then((res) => {
+        if (!res) return {};
+        return res.json().catch(() => ({}));
+      })
       .then((data) => {
         if (data.articles && Array.isArray(data.articles)) {
           setNews(data.articles.slice(0, 6)); // Show 6 news items
         }
       })
       .catch((err) => {
-        console.error("Error fetching news:", err);
+        console.warn("Error fetching news:", err.message);
       })
       .finally(() => {
         setLoadingNews(false);
@@ -230,7 +340,7 @@ export default function Home() {
     }, 5000); // Change image every 5 seconds
 
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedSport]);
 
   const formatUserCount = (count) => {
     if (count == null) return "0";
@@ -337,54 +447,6 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Sport Buttons */}
-          <div className="flex flex-wrap items-center gap-4">
-            <button 
-              onClick={() => setSelectedSport(selectedSport === "football" ? null : "football")}
-              className={`flex items-center gap-3 rounded-full border px-6 py-4 text-white font-semibold text-base transition-colors duration-200 backdrop-blur-sm ${
-                selectedSport === "football" 
-                  ? "border-green-500/60 bg-green-500/30" 
-                  : "border-green-500/30 bg-green-500/10 hover:bg-green-500/20"
-              }`}
-            >
-              <FaFootballBall className="h-5 w-5 text-green-400" />
-              <span>Football</span>
-            </button>
-            <button 
-              onClick={() => setSelectedSport(selectedSport === "f1" ? null : "f1")}
-              className={`flex items-center gap-3 rounded-full border px-6 py-4 text-white font-semibold text-base transition-colors duration-200 backdrop-blur-sm ${
-                selectedSport === "f1" 
-                  ? "border-red-500/60 bg-red-500/30" 
-                  : "border-red-500/30 bg-red-500/10 hover:bg-red-500/20"
-              }`}
-            >
-              <FaCar className="h-5 w-5 text-red-400" />
-              <span>F1</span>
-            </button>
-            <button 
-              onClick={() => setSelectedSport(selectedSport === "cricket" ? null : "cricket")}
-              className={`flex items-center gap-3 rounded-full border px-6 py-4 text-white font-semibold text-base transition-colors duration-200 backdrop-blur-sm ${
-                selectedSport === "cricket" 
-                  ? "border-yellow-500/60 bg-yellow-500/30" 
-                  : "border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20"
-              }`}
-            >
-              <GiCricketBat className="h-5 w-5 text-yellow-400" />
-              <span>Cricket</span>
-            </button>
-            <button 
-              onClick={() => setSelectedSport(selectedSport === "basketball" ? null : "basketball")}
-              className={`flex items-center gap-3 rounded-full border px-6 py-4 text-white font-semibold text-base transition-colors duration-200 backdrop-blur-sm ${
-                selectedSport === "basketball" 
-                  ? "border-orange-500/60 bg-orange-500/30" 
-                  : "border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/20"
-              }`}
-            >
-              <FaBasketballBall className="h-5 w-5 text-orange-400" />
-              <span>Basketball</span>
-            </button>
-          </div>
-
           {/* Stats */}
           <div className="flex items-center gap-8 lg:gap-12 pt-4">
             {heroStats.map((stat) => (
@@ -418,10 +480,12 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Upcoming Matches Section */}
+      {/* Upcoming Matches/Races Section */}
       <section className="mx-auto max-w-[95%] px-8 py-16 lg:px-12">
         <div className="mb-8 text-center">
-          <h2 className="mb-2 text-4xl font-bold text-white">Upcoming Matches</h2>
+          <h2 className="mb-2 text-4xl font-bold text-white">
+            {selectedSport === "f1" ? "Upcoming Races" : "Upcoming Matches"}
+          </h2>
           <p className="text-zinc-400">Don't miss the action</p>
         </div>
 
@@ -429,10 +493,66 @@ export default function Home() {
           {loadingMatches ? (
             <div className="col-span-full text-center text-zinc-400">Loading matches...</div>
           ) : matches.length === 0 ? (
-            <div className="col-span-full text-center text-zinc-400">No upcoming matches</div>
+            <div className="col-span-full text-center text-zinc-400">
+              {selectedSport === "f1" ? "No upcoming races" : "No upcoming matches"}
+            </div>
           ) : (
             matches.map((match, idx) => {
               const countdown = calculateCountdown(match.utcDate);
+              
+              // F1 race display
+              if (selectedSport === "f1") {
+                return (
+                  <div
+                    key={match.id || idx}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm"
+                  >
+                    <div className="mb-6">
+                      <h3 className="text-xl font-bold text-white mb-2">{match.name}</h3>
+                      <div className="flex items-center gap-2 text-sm text-zinc-400">
+                        <Trophy className="h-4 w-4 text-red-500" />
+                        <span>Round {match.round}</span>
+                      </div>
+                    </div>
+
+                    <div className="mb-6 space-y-2 text-sm text-zinc-400">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>{formatDate(match.utcDate)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        <span>{formatTime(match.utcDate)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        <span>{match.circuit || match.location || "TBD"}</span>
+                      </div>
+                      <div className="text-xs text-zinc-500">{match.location}</div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500">Time until race:</p>
+                      <div className="flex gap-3">
+                        <div className="rounded-lg border border-white/10 bg-black/40 px-4 py-2 text-center">
+                          <p className="text-lg font-bold text-white">{countdown.days}</p>
+                          <p className="text-xs text-zinc-400">Days</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/40 px-4 py-2 text-center">
+                          <p className="text-lg font-bold text-white">{countdown.hours}</p>
+                          <p className="text-xs text-zinc-400">Hours</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/40 px-4 py-2 text-center">
+                          <p className="text-lg font-bold text-white">{countdown.minutes}</p>
+                          <p className="text-xs text-zinc-400">Minutes</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              
+              // Football match display
               const teamColors = ["text-yellow-400", "text-orange-500", "text-blue-400", "text-green-400"];
               const team1Color = teamColors[idx % teamColors.length];
               const team2Color = teamColors[(idx + 1) % teamColors.length];
@@ -515,16 +635,18 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Top Players Section */}
+      {/* Top Players/Drivers Section */}
       <section className="mx-auto max-w-[95%] px-8 py-16 lg:px-12">
         <div className="mb-8 text-center">
           <h2 className="mb-2 text-4xl font-bold">
             <span className="text-white">Top</span>{" "}
             <span className="bg-gradient-to-r from-green-400 to-green-600 bg-clip-text text-transparent">
-              Players
+              {selectedSport === "f1" ? "Drivers" : "Players"}
             </span>
           </h2>
-          <p className="text-zinc-400">League's finest athletes</p>
+          <p className="text-zinc-400">
+            {selectedSport === "f1" ? "World's fastest drivers" : "League's finest athletes"}
+          </p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -582,14 +704,18 @@ export default function Home() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Eye className="h-4 w-4 text-[#5da2ff]" />
-                          <span className="text-sm text-zinc-300">Goals</span>
+                          <span className="text-sm text-zinc-300">
+                            {selectedSport === "f1" ? "Points" : "Goals"}
+                          </span>
                         </div>
                         <span className="font-semibold text-white">{goals}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Trophy className="h-4 w-4 text-[#b96bff]" />
-                          <span className="text-sm text-zinc-300">Assists</span>
+                          <span className="text-sm text-zinc-300">
+                            {selectedSport === "f1" ? "Wins" : "Assists"}
+                          </span>
                         </div>
                         <span className="font-semibold text-white">{assists}</span>
                       </div>
@@ -614,11 +740,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Latest News Section */}
+      {/* Latest News Section (text-focused, no images) */}
       <section className="mx-auto max-w-[95%] px-8 py-16 lg:px-12">
-        <div className="mb-8 text-center">
-          <h2 className="mb-2 text-4xl font-bold text-white">Latest News</h2>
-          <p className="text-zinc-400">Stay updated with the latest happenings</p>
+        <div className="mb-8 text-center space-y-2">
+          <h2 className="mb-1 text-4xl font-bold text-white">Latest News</h2>
+          <p className="text-sm text-zinc-400">
+            Headlines and quick bites from around the football world.
+          </p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -628,177 +756,51 @@ export default function Home() {
             <div className="col-span-3 text-center text-zinc-400">No news available</div>
           ) : (
             news.map((article, idx) => (
-              <div
+              <article
                 key={idx}
-                className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm"
+                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050815] via-[#050811] to-[#050810] p-6 backdrop-blur-sm transition-transform duration-200 hover:-translate-y-1 hover:border-[#5da2ff]/60"
               >
-                <div className="mb-4 flex items-center justify-between">
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCategoryColor(article.category)}`}>
-                    {article.category || "News"}
+                {/* Pill + timestamp row */}
+                <div className="mb-4 flex items-center justify-between text-xs">
+                  <span
+                    className={`rounded-full px-3 py-1 font-semibold ${getCategoryColor(
+                      article.category
+                    )}`}
+                  >
+                    {article.category || "Highlights"}
                   </span>
-                  <span className="text-xs text-zinc-500">{article.timestamp || "Recently"}</span>
-                </div>
-                
-                <div className="mb-4 h-48 overflow-hidden rounded-lg bg-black/40">
-                  <img
-                    src={article.imageUrl || newsFallbackImages[idx % newsFallbackImages.length]}
-                    alt={article.title || "Football news"}
-                    className="h-full w-full object-cover"
-                  />
+                  <span className="text-zinc-500">
+                    {article.timestamp || article.publishedAt || "Recently"}
+                  </span>
                 </div>
 
-                <h3 className="mb-2 text-lg font-semibold text-white">{article.title || "Football News"}</h3>
-                <p className="mb-4 text-sm text-zinc-400 line-clamp-2">{article.description || "Latest updates from the world of football."}</p>
-                
-                <button className="flex items-center gap-2 text-sm font-medium text-[#5da2ff] hover:text-[#78b4ff]">
-                  Read more <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
+                {/* Title */}
+                <h3 className="mb-2 text-lg font-semibold text-white line-clamp-2 group-hover:text-[#5da2ff]">
+                  {article.title || "Football News"}
+                </h3>
+
+                {/* Body + meta */}
+                <p className="mb-4 text-sm text-zinc-400 line-clamp-3">
+                  {article.description || "Latest updates from the world of football."}
+                </p>
+
+                <div className="flex items-center justify-between text-xs text-zinc-500">
+                  <span className="flex items-center gap-2">
+                    <span className="inline-flex h-2 w-2 rounded-full bg-[#5da2ff]" />
+                    {article.source || "ArenaX Wire"}
+                  </span>
+                  <button className="flex items-center gap-1 text-[#5da2ff] hover:text-[#78b4ff]">
+                    Read more
+                    <ArrowRight className="h-3 w-3" />
+                  </button>
+                </div>
+              </article>
             ))
           )}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 bg-black py-12">
-        <div className="mx-auto max-w-[95%] px-8 lg:px-12">
-          {/* Upper Section - Four Columns */}
-          <div className="grid gap-8 md:grid-cols-4 mb-8">
-            {/* Brand Information */}
-            <div>
-              <h3 className="mb-4 bg-gradient-to-r from-[#5da2ff] to-[#b96bff] bg-clip-text text-xl font-bold text-transparent uppercase tracking-wide">
-                ARENAX
-              </h3>
-              <p className="mb-6 text-sm text-white leading-relaxed">
-                The future of sports starts here. Join millions of fans worldwide in the most advanced sports platform.
-              </p>
-              {/* Social Media Links */}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-transparent text-white transition-colors hover:bg-white/10"
-                  aria-label="Facebook"
-                >
-                  <FaFacebook className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-transparent text-white transition-colors hover:bg-white/10"
-                  aria-label="Twitter"
-                >
-                  <FaTwitter className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-transparent text-white transition-colors hover:bg-white/10"
-                  aria-label="Instagram"
-                >
-                  <FaInstagram className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-transparent text-white transition-colors hover:bg-white/10"
-                  aria-label="YouTube"
-                >
-                  <FaYoutube className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Links */}
-            <div>
-              <h4 className="mb-4 text-sm font-semibold text-white">Quick Links</h4>
-              <ul className="space-y-2 text-sm text-white">
-                <li>
-                  <Link href="/" className="transition-colors hover:text-zinc-400">
-                    Home
-                  </Link>
-                </li>
-                <li>
-                  <button type="button" className="transition-colors hover:text-zinc-400">
-                    Teams
-                  </button>
-                </li>
-                <li>
-                  <button type="button" className="transition-colors hover:text-zinc-400">
-                    Matches
-                  </button>
-                </li>
-                <li>
-                  <button type="button" className="transition-colors hover:text-zinc-400">
-                    Players
-                  </button>
-                </li>
-              </ul>
-            </div>
-
-            {/* Resources */}
-            <div>
-              <h4 className="mb-4 text-sm font-semibold text-white">Resources</h4>
-              <ul className="space-y-2 text-sm text-white">
-                <li>
-                  <button type="button" className="transition-colors hover:text-zinc-400">
-                    News
-                  </button>
-                </li>
-                <li>
-                  <button type="button" className="transition-colors hover:text-zinc-400">
-                    Merchandise
-                  </button>
-                </li>
-                <li>
-                  <button type="button" className="transition-colors hover:text-zinc-400">
-                    About Us
-                  </button>
-                </li>
-                <li>
-                  <button type="button" className="transition-colors hover:text-zinc-400">
-                    Contact
-                  </button>
-                </li>
-              </ul>
-            </div>
-
-            {/* Stay Updated */}
-            <div>
-              <h4 className="mb-4 text-sm font-semibold text-white">Stay Updated</h4>
-              <p className="mb-4 text-sm text-white leading-relaxed">
-                Subscribe to get the latest news and updates delivered to your inbox.
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  placeholder="Your email"
-                  className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-[#5da2ff]"
-                />
-                <Button className="rounded-lg bg-gradient-to-r from-[#5da2ff] to-[#b96bff] px-4 py-2.5 text-sm text-white hover:opacity-90">
-                  <Mail className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Lower Section - Copyright and Policy Links */}
-          <div className="border-t border-zinc-700/50 pt-8">
-            <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
-              <p className="text-sm text-white">
-                © 2025 ArenaX Sports. All rights reserved.
-              </p>
-              <div className="flex items-center gap-6 text-sm text-white">
-                <button type="button" className="transition-colors hover:text-zinc-400">
-                  Privacy Policy
-                </button>
-                <button type="button" className="transition-colors hover:text-zinc-400">
-                  Terms of Service
-                </button>
-                <button type="button" className="transition-colors hover:text-zinc-400">
-                  Cookie Policy
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

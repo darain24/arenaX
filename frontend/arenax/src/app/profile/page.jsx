@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/api";
 import { getAccessToken, isAuthenticated, clearTokens } from "@/lib/token";
 import { SiteHeader } from "@/components/site-header";
-import { User, Mail, Lock, Save, X } from "lucide-react";
+import { SiteFooter } from "@/components/site-footer";
+import { User, Mail, Lock, Save, X, Trash2 } from "lucide-react";
 
 // Generate avatar initials from name
 function getInitials(name) {
@@ -50,6 +51,7 @@ export default function ProfilePage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -139,6 +141,48 @@ export default function ProfilePage() {
       setError("Failed to update profile");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete your ArenaX account? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      setError("");
+      setSuccess("");
+
+      const token = getAccessToken();
+      if (!token) {
+        throw new Error("Missing authentication token.");
+      }
+
+      const res = await apiRequest("/auth/profile", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete account.");
+      }
+
+      // Clear tokens and redirect to login
+      clearTokens();
+      router.push("/login");
+    } catch (err) {
+      console.error("Error deleting account:", err);
+      setError(err.message || "Failed to delete account.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -327,8 +371,8 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Submit Button */}
-            <div className="flex items-center gap-4 pt-4">
+            {/* Actions */}
+            <div className="flex flex-wrap items-center gap-4 pt-4 justify-between">
               <Button
                 type="submit"
                 disabled={saving}
@@ -351,10 +395,21 @@ export default function ProfilePage() {
               >
                 Cancel
               </Button>
+
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deleting ? "Deleting..." : "Delete Account"}
+              </button>
             </div>
           </form>
         </div>
       </div>
+      <SiteFooter />
     </main>
   );
 }

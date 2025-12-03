@@ -1,44 +1,86 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Search, Target, Trophy, TrendingUp, Star, Users2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
-export default function PlayersPage() {
+function PlayersContent() {
+  const searchParams = useSearchParams();
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeFilter, setActiveFilter] = useState("All Players");
-  const [searchQuery, setSearchQuery] = useState("");
+  
+  // Get search query and sport from URL
+  const searchQuery = searchParams.get("q") || "";
+  const sport = searchParams.get("sport") || "football";
 
   useEffect(() => {
     async function loadPlayers() {
       try {
         setLoading(true);
         setError("");
-        const res = await fetch(`${API_URL}/api/football/players?sport=football`);
-        if (!res.ok) {
-          throw new Error(`Failed to fetch players (${res.status})`);
-        }
-        const data = await res.json().catch(() => ({}));
-        const apiPlayers = Array.isArray(data.scorers) ? data.scorers : [];
+        
+        const endpoint = sport === "f1"
+          ? `${API_URL}/api/f1/drivers?sport=f1`
+          : `${API_URL}/api/football/players?sport=football`;
+        
+        const res = await fetch(endpoint).catch((fetchErr) => {
+          // Network error or CORS issue
+          console.warn(`Failed to fetch ${sport === "f1" ? "drivers" : "players"} (backend may be offline):`, fetchErr.message);
+          return null;
+        });
 
-        setPlayers(apiPlayers);
+        if (!res) {
+          setError("Unable to connect to the server. Please check if the backend is running.");
+          setLoading(false);
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(`Failed to fetch ${sport === "f1" ? "drivers" : "players"} (${res.status})`);
+        }
+        
+        const data = await res.json().catch(() => ({}));
+        
+        if (sport === "f1") {
+          // Map F1 drivers to players format
+          const drivers = Array.isArray(data.drivers) ? data.drivers : [];
+          setPlayers(drivers.map(driver => ({
+            player: {
+              id: driver.id,
+              name: driver.name,
+              position: driver.code || driver.nationality,
+              imageUrl: driver.imageUrl,
+            },
+            team: { name: driver.nationality },
+            goals: driver.points || 0,
+            assists: driver.wins || 0,
+            rating: 8.5 + (driver.points || 0) / 100,
+            mvps: driver.wins || 0,
+            matches: 22,
+          })));
+        } else {
+          const apiPlayers = Array.isArray(data.scorers) ? data.scorers : [];
+          setPlayers(apiPlayers);
+        }
       } catch (err) {
-        console.error("Error fetching players:", err);
-        setError("Failed to load players from the football API.");
+        console.warn(`Error fetching ${sport === "f1" ? "drivers" : "players"}:`, err.message);
+        setError(err.message || `Failed to load ${sport === "f1" ? "drivers" : "players"} from the API.`);
       } finally {
         setLoading(false);
       }
     }
 
     loadPlayers();
-  }, []);
+  }, [sport]);
 
-  // Filter players by position
+  // Filter players by position (only for football)
   const positionMap = {
     "Strikers": ["Forward", "Striker", "Attacker"],
     "Midfielders": ["Midfielder", "Central Midfielder", "Attacking Midfielder", "Defensive Midfielder"],
@@ -48,8 +90,8 @@ export default function PlayersPage() {
   const filteredPlayers = useMemo(() => {
     let filtered = players;
 
-    // Filter by position
-    if (activeFilter !== "All Players") {
+    // Filter by position (only for football)
+    if (sport !== "f1" && activeFilter !== "All Players") {
       const positions = positionMap[activeFilter] || [];
       filtered = filtered.filter((p) => {
         const playerPosition = p.player?.position || "";
@@ -73,7 +115,7 @@ export default function PlayersPage() {
     }
 
     return filtered;
-  }, [players, activeFilter, searchQuery]);
+  }, [players, activeFilter, searchQuery, sport]);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -88,10 +130,15 @@ export default function PlayersPage() {
     }, {});
     const avgRating =
       players.length > 0
-        ? (
-            players.reduce((sum, p) => sum + (p.rating || 8.5), 0) /
-            players.length
-          ).toFixed(1)
+        ? (() => {
+            const total = players.reduce((sum, p) => {
+              // Normalise rating to a safe number (handles strings and missing values)
+              const raw = typeof p.rating === "number" ? p.rating : parseFloat(p.rating);
+              const rating = Number.isFinite(raw) ? raw : 8.5;
+              return sum + rating;
+            }, 0);
+            return (total / players.length).toFixed(1);
+          })()
         : "0.0";
 
     return {
@@ -114,27 +161,24 @@ export default function PlayersPage() {
               Elite
             </span>{" "}
             <span className="bg-gradient-to-r from-blue-400 to-green-400 bg-clip-text text-transparent">
-              Players
+              {sport === "f1" ? "Drivers" : "Players"}
             </span>
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
-            Meet the world's most talented athletes pushing the boundaries of sports.
+            {sport === "f1"
+              ? "Meet the world's fastest drivers competing in Formula 1."
+              : "Meet the world's most talented athletes pushing the boundaries of sports."}
           </p>
         </div>
 
-        {/* Search Bar */}
-        <div className="max-w-md mx-auto mb-12">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
-            <Input
-              type="text"
-              placeholder="Search players..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 bg-white/5 border-white/10 text-white placeholder:text-zinc-500 focus:border-[#5da2ff]"
-            />
+        {/* Search Bar - Hidden on desktop, shown on mobile as fallback */}
+        {searchQuery && (
+          <div className="max-w-md mx-auto mb-6 text-center">
+            <p className="text-sm text-zinc-400">
+              Showing results for: <span className="text-white font-medium">"{searchQuery}"</span>
+            </p>
           </div>
-        </div>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
@@ -328,24 +372,25 @@ export default function PlayersPage() {
         )}
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 bg-black py-10">
-        <div className="mx-auto flex max-w-[95%] flex-col items-center justify-between gap-4 px-8 text-xs text-white/70 lg:flex-row lg:px-12">
-          <p>© 2025 ArenaX Sports. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <button type="button" className="hover:text-zinc-300">
-              Privacy Policy
-            </button>
-            <button type="button" className="hover:text-zinc-300">
-              Terms of Service
-            </button>
-            <button type="button" className="hover:text-zinc-300">
-              Cookie Policy
-            </button>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
+  );
+}
+
+export default function PlayersPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-black text-white">
+          <SiteHeader />
+          <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+            <div className="text-zinc-400">Loading...</div>
+          </div>
+        </main>
+      }
+    >
+      <PlayersContent />
+    </Suspense>
   );
 }
 
